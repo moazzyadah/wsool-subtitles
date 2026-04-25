@@ -49,15 +49,28 @@ export function safeJoin(root: string, jobId: string, ...rest: string[]): string
   return candidate;
 }
 
-/** Stream-write a Web ReadableStream to disk with a hard byte cap. */
+/**
+ * Stream-write a Web ReadableStream to disk with a hard byte cap.
+ * Opens with O_CREAT|O_WRONLY|O_EXCL|O_NOFOLLOW so we never follow a symlink
+ * placed by a racing process and never clobber an existing file.
+ */
 export async function streamToFile(
   stream: ReadableStream<Uint8Array>,
   destPath: string,
   maxBytes: number
 ): Promise<{ bytesWritten: number }> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  const out = fs.createWriteStream(destPath);
+
+  const flags =
+    fs.constants.O_CREAT |
+    fs.constants.O_WRONLY |
+    fs.constants.O_EXCL |
+    // O_NOFOLLOW is unavailable on Windows — fall back to the plain flags.
+    (typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0);
+  const fd = fs.openSync(destPath, flags, 0o600);
+  const out = fs.createWriteStream(destPath, { fd, autoClose: true });
   let bytesWritten = 0;
+  let aborted = false;
 
   const reader = stream.getReader();
   try {
@@ -66,6 +79,7 @@ export async function streamToFile(
       if (done) break;
       bytesWritten += value.byteLength;
       if (bytesWritten > maxBytes) {
+        aborted = true;
         out.destroy();
         try { fs.unlinkSync(destPath); } catch { /* ignore */ }
         throw new UploadError(
@@ -80,10 +94,24 @@ export async function streamToFile(
   } finally {
     reader.releaseLock();
   }
-  await new Promise<void>((resolve, reject) => {
-    out.end((err: NodeJS.ErrnoException | null | undefined) => (err ? reject(err) : resolve()));
-  });
+  if (!aborted) {
+    await new Promise<void>((resolve, reject) => {
+      out.end((err: NodeJS.ErrnoException | null | undefined) => (err ? reject(err) : resolve()));
+    });
+  }
   return { bytesWritten };
+}
+
+/** Stream sha256 of a file on disk. Avoids loading multi-GB media into memory. */
+export async function hashPathStreaming(filePath: string): Promise<string> {
+  const hash = crypto.createHash('sha256');
+  await new Promise<void>((resolve, reject) => {
+    const rs = fs.createReadStream(filePath);
+    rs.on('data', chunk => hash.update(chunk));
+    rs.on('end', () => resolve());
+    rs.on('error', reject);
+  });
+  return hash.digest('hex');
 }
 
 /**

@@ -1,4 +1,5 @@
 import 'server-only';
+import { openAsBlob } from 'node:fs';
 import type { STTProvider, TranscribeInput, TranscribeOutcome, TranscriptionResult, Word, Segment } from '@/types/provider';
 import { config } from '../config';
 import { ensureOk, failed } from './base';
@@ -42,7 +43,7 @@ function authHeaders(): HeadersInit {
 
 async function submitJob(input: TranscribeInput): Promise<string> {
   const form = new FormData();
-  const blob = new Blob([new Uint8Array(input.audio)], { type: `audio/${input.audioFormat}` });
+  const blob = await openAsBlob(input.audioPath, { type: `audio/${input.audioFormat}` });
   form.append('data_file', blob, `audio.${input.audioFormat}`);
 
   const lang = input.language && input.language !== 'auto' ? input.language : 'auto';
@@ -67,6 +68,7 @@ async function submitJob(input: TranscribeInput): Promise<string> {
     method: 'POST',
     headers: authHeaders(),
     body: form,
+    signal: input.signal,
   });
   await ensureOk(res, 'Speechmatics (submit)');
   const json = (await res.json()) as { id: string };
@@ -173,7 +175,7 @@ export const speechmaticsProvider: STTProvider = {
       }
       if (job.status === 'rejected') {
         const msg = job.errors?.[0]?.message ?? 'Speechmatics job rejected';
-        return failed(undefined, msg);
+        return failed(undefined, msg, false);
       }
       return { kind: 'pending', pollToken: token, etaSec: 10 };
     } catch (e) {

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { validateJobId, safeJoin, UploadError } from '@/lib/upload';
 import { getJob } from '@/lib/jobs';
+import { getUpload } from '@/lib/uploads';
 import { burnSubtitles, type BurnStyle } from '@/lib/ffmpeg';
 import { groupWordsIntoSegments, segmentsToSrt } from '@/lib/srt';
 import { config, sanitizeError } from '@/lib/config';
@@ -22,43 +23,51 @@ const StyleSchema = z.object({
 
 const Schema = z.object({
   jobId: z.string(),
-  sourcePath: z.string(),
+  uploadId: z.string(),
   style: StyleSchema,
 });
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = Schema.parse(await req.json());
-    const id = validateJobId(body.jobId);
+    const jobId = validateJobId(body.jobId);
+    const uploadId = validateJobId(body.uploadId);
 
-    const job = getJob(id);
+    const job = getJob(jobId);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
     if (job.status !== 'done' || !job.result) {
       return NextResponse.json({ error: 'Transcription not complete' }, { status: 409 });
     }
 
-    if (!fs.existsSync(body.sourcePath)) {
-      return NextResponse.json({ error: 'Source video not found' }, { status: 404 });
+    const upload = getUpload(uploadId);
+    if (!upload || !upload.sourcePath) {
+      return NextResponse.json({ error: 'Upload no longer available' }, { status: 404 });
     }
-    // sourcePath must live under uploads/{jobId}/
-    const expectedRoot = safeJoin(config.paths.uploads, id);
-    const resolvedSrc = path.resolve(body.sourcePath);
-    if (!resolvedSrc.startsWith(expectedRoot + path.sep)) {
-      return NextResponse.json({ error: 'sourcePath outside upload dir' }, { status: 400 });
+    // Defense in depth: server-resolved sourcePath must lie under uploads root.
+    const root = path.resolve(config.paths.uploads);
+    const src = path.resolve(upload.sourcePath);
+    if (!src.startsWith(root + path.sep)) {
+      return NextResponse.json({ error: 'Source path escapes uploads root' }, { status: 400 });
+    }
+    if (!fs.existsSync(src)) {
+      return NextResponse.json({ error: 'Source video missing on disk' }, { status: 404 });
     }
 
-    const outputDir = safeJoin(config.paths.outputs, id);
+    const outputDir = safeJoin(config.paths.outputs, jobId);
     fs.mkdirSync(outputDir, { recursive: true });
 
-    const segments = job.result.segments.length
-      ? job.result.segments
-      : groupWordsIntoSegments(job.result.words);
+    // Prefer user-edited segments — they are the canonical post-edit source of truth.
+    const segments = job.editedSegments?.length
+      ? job.editedSegments
+      : job.result.segments.length
+        ? job.result.segments
+        : groupWordsIntoSegments(job.result.words);
+
     const srtPath = path.join(outputDir, 'subtitle.srt');
-    // BOM helps Windows-based players render UTF-8 correctly
     fs.writeFileSync(srtPath, '\uFEFF' + segmentsToSrt(segments), 'utf8');
 
     const outPath = path.join(outputDir, 'burned.mp4');
-    await burnSubtitles(body.sourcePath, srtPath, outPath, (body.style ?? {}) as BurnStyle);
+    await burnSubtitles(src, srtPath, outPath, (body.style ?? {}) as BurnStyle);
 
     return NextResponse.json({ outputPath: outPath, srtPath });
   } catch (e) {

@@ -6,30 +6,26 @@ export type JobKind = 'transcribe' | 'burn' | 'compare';
 
 export interface Job {
   id: string;
+  /** Server-side upload record id; audio path/hash resolved via uploads.ts */
+  uploadId: string;
   kind: JobKind;
   status: JobStatus;
-  /** Provider id requested by the user */
   requestedProvider: string;
-  /** Provider id that actually produced output (set on completion) */
   actualProvider?: string;
   model: string;
   language: string;
   task: 'transcribe' | 'translate';
-  /** Path to the source audio (FLAC, normalized) */
-  audioPath: string;
-  /** sha256 of the audio file — used as cache key */
-  audioHash: string;
-  /** Provider-specific token for async polling */
   pollToken?: string;
-  /** When async, when to next poll (epoch ms) */
   nextPollAt?: number;
-  /** Final result on completion */
+  /** Worker that holds the processing lease (null if free) */
+  leaseOwner?: string;
+  /** Lease deadline epoch ms; expired leases are reclaimed on boot */
+  leaseExpiresAt?: number;
   result?: TranscriptionResult;
-  /** Error message on failure (sanitized) */
+  /** User-edited segments persisted server-side; export/burn read these when present */
+  editedSegments?: Array<{ start: number; end: number; text: string }>;
   error?: string;
-  /** Optional fallback chain — list of provider IDs to try after primary */
   fallbackChain?: string[];
-  /** Index into fallbackChain currently being attempted */
   fallbackIndex?: number;
   createdAt: number;
   updatedAt: number;

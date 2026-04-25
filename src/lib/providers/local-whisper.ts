@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import type { STTProvider, TranscribeInput, TranscribeOutcome, TranscriptionResult, Word, Segment } from '@/types/provider';
 import { config } from '../config';
 import { failed } from './base';
+import { FFMPEG_BIN } from '../ffmpeg';
 
 const execFileAsync = promisify(execFile);
 
@@ -89,13 +90,26 @@ interface WhisperJsonOutput {
   transcription?: WhisperJsonSegment[];
 }
 
+async function transcodeToPcmWav(srcPath: string, destPath: string): Promise<void> {
+  // whisper.cpp requires real PCM-WAV (16kHz mono signed 16-bit). Our upload
+  // pipeline emits FLAC, so writing input.audio bytes verbatim to in.wav (the
+  // pre-fix behaviour) handed whisper.cpp a FLAC-with-WAV-extension and it
+  // crashed. Run a fast ffmpeg transcode here.
+  await execFileAsync(FFMPEG_BIN, [
+    '-y', '-loglevel', 'error',
+    '-i', srcPath,
+    '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
+    '-f', 'wav',
+    destPath,
+  ]);
+}
+
 async function runWhisperCpp(input: TranscribeInput, modelFile: string): Promise<TranscriptionResult> {
   const bin = await findWhisperBinary();
 
-  // Write audio to a temp WAV file (whisper.cpp wants WAV, 16kHz mono)
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wsool-'));
   const wavPath = path.join(tmpDir, 'in.wav');
-  fs.writeFileSync(wavPath, input.audio);
+  await transcodeToPcmWav(input.audioPath, wavPath);
 
   const outBase = path.join(tmpDir, 'out');
   const args = [
@@ -167,7 +181,9 @@ export const localWhisperProvider: STTProvider = {
       return { kind: 'done', result };
     } catch (e) {
       const msg = (e as Error).message ?? 'Local whisper error';
-      return failed(undefined, msg);
+      // Whisper.cpp crashes are local-config issues (missing binary, bad model,
+      // unsupported CPU) — never something a fallback retry will fix.
+      return failed(undefined, msg, false);
     }
   },
 };

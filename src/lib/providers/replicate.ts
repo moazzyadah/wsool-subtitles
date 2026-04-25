@@ -104,7 +104,7 @@ export const replicateProvider: STTProvider = {
         return { kind: 'done', result };
       }
       if (pred.status === 'failed' || pred.status === 'canceled') {
-        return failed(undefined, pred.error || `Replicate prediction ${pred.status}`);
+        return failed(undefined, pred.error || `Replicate prediction ${pred.status}`, false);
       }
       // Still running
       return { kind: 'pending', pollToken: token, etaSec: 10 };

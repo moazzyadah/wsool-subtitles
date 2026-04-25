@@ -26,27 +26,35 @@ interface HfResponse {
 async function callHuggingFace(input: TranscribeInput): Promise<TranscribeOutcome> {
   if (!config.keys.huggingface) return failed(401, 'HuggingFace token not set');
 
-  const params: Record<string, unknown> = {
-    return_timestamps: true,
-  };
-  if (input.language && input.language !== 'auto') {
-    params.generate_kwargs = { language: input.language, task: input.task ?? 'transcribe' };
-  } else if (input.task === 'translate') {
-    params.generate_kwargs = { task: 'translate' };
-  }
+  // HF Inference accepts JSON `{ inputs: <base64>, parameters }` so we can pass
+  // return_timestamps + generate_kwargs (language/task). Raw-bytes body silently
+  // drops these parameters, which the adversarial review flagged as a contract bug.
+  const parameters: Record<string, unknown> = { return_timestamps: true };
+  const generateKwargs: Record<string, unknown> = {};
+  if (input.language && input.language !== 'auto') generateKwargs.language = input.language;
+  if (input.task === 'translate') generateKwargs.task = 'translate';
+  else generateKwargs.task = 'transcribe';
+  parameters.generate_kwargs = generateKwargs;
 
   const res = await fetch(`https://api-inference.huggingface.co/models/${input.model}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${config.keys.huggingface}`,
-      'Content-Type': `audio/${input.audioFormat}`,
+      'Content-Type': 'application/json',
       'X-Wait-For-Model': 'true',
     },
-    body: new Uint8Array(input.audio),
+    body: JSON.stringify({
+      inputs: input.audio.toString('base64'),
+      parameters,
+    }),
+    signal: input.signal,
   });
   await ensureOk(res, 'HuggingFace');
 
   const json = (await res.json()) as HfResponse;
+  if (!json.text || (json.chunks && json.chunks.length === 0)) {
+    return failed(undefined, 'HuggingFace returned empty transcript', false);
+  }
   const segments: Segment[] = (json.chunks ?? []).map(c => ({
     text: c.text.trim(),
     start: c.timestamp[0],

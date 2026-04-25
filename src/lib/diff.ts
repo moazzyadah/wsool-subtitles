@@ -13,10 +13,18 @@ export interface DiffToken {
   op: DiffOp;
 }
 
-const WORD_REGEX = /[\p{L}\p{N}']+|[^\s\p{L}\p{N}']+/gu;
+/**
+ * Word characters include letters, marks (combining/diacritic — critical for
+ * Arabic harakat), numbers, and apostrophes. The original regex excluded
+ * `\p{M}` which split Arabic graphemes into separate tokens (base letter +
+ * harakat) and produced false diff highlights for harakat-bearing transcripts.
+ */
+const WORD_REGEX = /[\p{L}\p{M}\p{N}']+|[^\s\p{L}\p{M}\p{N}']+/gu;
 
 function tokenize(s: string): string[] {
-  return s.match(WORD_REGEX) ?? [];
+  // NFC normalize first so the same letter+mark sequence is one canonical
+  // string regardless of how each provider emitted it.
+  return s.normalize('NFC').match(WORD_REGEX) ?? [];
 }
 
 function normalizeForCompare(s: string): string {

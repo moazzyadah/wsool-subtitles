@@ -46,11 +46,14 @@ function authHeaders(): HeadersInit {
   return { Authorization: config.keys.assemblyai };
 }
 
-async function uploadAudio(audio: Buffer): Promise<string> {
+async function uploadAudio(audio: Buffer, signal?: AbortSignal): Promise<string> {
+  // AssemblyAI /upload takes raw bytes — pass the Buffer directly to avoid the
+  // Buffer → Uint8Array → request-body copy chain that the review flagged.
   const res = await fetch(`${BASE}/upload`, {
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/octet-stream' },
     body: new Uint8Array(audio),
+    signal,
   });
   await ensureOk(res, 'AssemblyAI (upload)');
   const json = (await res.json()) as { upload_url: string };
@@ -71,6 +74,7 @@ async function createTranscript(input: TranscribeInput, audioUrl: string): Promi
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: input.signal,
   });
   await ensureOk(res, 'AssemblyAI (create)');
   const json = (await res.json()) as { id: string };
@@ -127,7 +131,7 @@ export const assemblyaiProvider: STTProvider = {
   async start(input: TranscribeInput): Promise<TranscribeOutcome> {
     if (!config.keys.assemblyai) return failed(401, 'AssemblyAI API key not set');
     try {
-      const uploadUrl = await uploadAudio(input.audio);
+      const uploadUrl = await uploadAudio(input.audio, input.signal);
       const id = await createTranscript(input, uploadUrl);
       return { kind: 'pending', pollToken: id, etaSec: 30 };
     } catch (e) {
@@ -144,7 +148,7 @@ export const assemblyaiProvider: STTProvider = {
         const sentences = await getSentences(token);
         return { kind: 'done', result: mapTranscript(t, sentences) };
       }
-      if (t.status === 'error') return failed(undefined, t.error || 'AssemblyAI transcription failed');
+      if (t.status === 'error') return failed(undefined, t.error || 'AssemblyAI transcription failed', false);
       return { kind: 'pending', pollToken: token, etaSec: 10 };
     } catch (e) {
       const status = (e as { status?: number }).status;

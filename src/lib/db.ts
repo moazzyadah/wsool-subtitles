@@ -17,8 +17,19 @@ export function getDb(): Database.Database {
   _db.pragma('foreign_keys = ON');
 
   _db.exec(`
+    CREATE TABLE IF NOT EXISTS uploads (
+      id TEXT PRIMARY KEY,
+      audio_path TEXT NOT NULL,
+      audio_hash TEXT NOT NULL,
+      source_path TEXT,
+      source_mime TEXT,
+      duration_sec REAL,
+      created_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
+      upload_id TEXT NOT NULL,
       kind TEXT NOT NULL,
       status TEXT NOT NULL,
       requested_provider TEXT NOT NULL,
@@ -26,11 +37,12 @@ export function getDb(): Database.Database {
       model TEXT NOT NULL,
       language TEXT NOT NULL,
       task TEXT NOT NULL,
-      audio_path TEXT NOT NULL,
-      audio_hash TEXT NOT NULL,
       poll_token TEXT,
       next_poll_at INTEGER,
+      lease_owner TEXT,
+      lease_expires_at INTEGER,
       result_json TEXT,
+      edited_segments_json TEXT,
       error TEXT,
       fallback_chain TEXT,
       fallback_index INTEGER,
@@ -39,6 +51,7 @@ export function getDb(): Database.Database {
     );
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
     CREATE INDEX IF NOT EXISTS idx_jobs_next_poll ON jobs(next_poll_at);
+    CREATE INDEX IF NOT EXISTS idx_jobs_upload ON jobs(upload_id);
 
     CREATE TABLE IF NOT EXISTS transcription_cache (
       audio_hash TEXT NOT NULL,

@@ -79,24 +79,32 @@ async function callGemini(input: TranscribeInput): Promise<TranscribeOutcome> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: input.signal,
   });
   await ensureOk(res, 'Gemini');
 
   const json = (await res.json()) as GeminiResponse;
   const blockReason = json.promptFeedback?.blockReason;
-  if (blockReason) return failed(400, `Gemini blocked: ${blockReason}`);
+  if (blockReason) return failed(400, `Gemini blocked: ${blockReason}`, false);
 
   const raw = json.candidates?.[0]?.content?.parts?.map(p => p.text ?? '').join('') ?? '';
-  if (!raw) return failed(undefined, 'Gemini returned empty transcript');
+  if (!raw) return failed(undefined, 'Gemini returned empty transcript', false);
 
   const { text, segments } = parseGeminiTranscript(raw);
-  const words: Word[] = [];
+
+  // Coverage check — if the model ignored our timestamp instruction we end up
+  // with zero parsed segments and a `durationSec=0` result. Surface that as
+  // an explicit failure rather than emitting a silently-broken transcript.
+  const totalLines = raw.split(/\r?\n/).filter(l => l.trim()).length;
+  if (segments.length === 0 || segments.length < Math.ceil(totalLines * 0.5)) {
+    return failed(undefined, 'Gemini timestamp coverage too low — model ignored format instruction', false);
+  }
 
   const result: TranscriptionResult = {
     text,
     language: input.language ?? 'auto',
-    durationSec: segments.length ? segments[segments.length - 1]!.end : 0,
-    words,
+    durationSec: segments[segments.length - 1]!.end,
+    words: [] as Word[],
     segments,
     actualProvider: 'gemini',
     raw: json,

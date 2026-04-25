@@ -1,4 +1,5 @@
 import 'server-only';
+import { openAsBlob } from 'node:fs';
 import type { STTProvider, TranscribeInput, TranscribeOutcome, TranscriptionResult, Word, Segment } from '@/types/provider';
 import { config } from '../config';
 import { ensureOk, failed } from './base';
@@ -40,15 +41,19 @@ function authHeaders(): HeadersInit {
   return { Authorization: `Bearer ${config.keys.soniox}` };
 }
 
-async function uploadFile(audio: Buffer, format: string): Promise<string> {
+async function uploadFile(audioPath: string, format: string, signal?: AbortSignal): Promise<string> {
+  // openAsBlob streams the file from disk into the multipart body — no full
+  // in-memory Buffer→Uint8Array→Blob copy chain (which the review flagged as
+  // an OOM risk for multi-GB uploads).
+  const blob = await openAsBlob(audioPath, { type: `audio/${format}` });
   const form = new FormData();
-  const blob = new Blob([new Uint8Array(audio)], { type: `audio/${format}` });
   form.append('file', blob, `audio.${format}`);
 
   const res = await fetch(`${BASE}/v1/files`, {
     method: 'POST',
     headers: authHeaders(),
     body: form,
+    signal,
   });
   await ensureOk(res, 'Soniox (upload)');
   const json = (await res.json()) as { id: string };
@@ -67,6 +72,7 @@ async function createTranscription(input: TranscribeInput, fileId: string): Prom
     method: 'POST',
     headers: { ...authHeaders(), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal: input.signal,
   });
   await ensureOk(res, 'Soniox (create)');
   const json = (await res.json()) as { id: string };
@@ -155,7 +161,7 @@ export const sonioxProvider: STTProvider = {
   async start(input: TranscribeInput): Promise<TranscribeOutcome> {
     if (!config.keys.soniox) return failed(401, 'Soniox API key not set');
     try {
-      const fileId = await uploadFile(input.audio, input.audioFormat);
+      const fileId = await uploadFile(input.audioPath, input.audioFormat, input.signal);
       const trId = await createTranscription(input, fileId);
       return { kind: 'pending', pollToken: packToken(fileId, trId), etaSec: 20 };
     } catch (e) {
@@ -173,7 +179,7 @@ export const sonioxProvider: STTProvider = {
         const t = await getTranscript(transcriptionId);
         return { kind: 'done', result: mapTranscript(t) };
       }
-      if (job.status === 'error') return failed(undefined, job.error_message || 'Soniox transcription failed');
+      if (job.status === 'error') return failed(undefined, job.error_message || 'Soniox transcription failed', false);
       return { kind: 'pending', pollToken: token, etaSec: 10 };
     } catch (e) {
       const status = (e as { status?: number }).status;

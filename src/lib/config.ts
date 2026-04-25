@@ -79,9 +79,47 @@ export function enabledProviderIds(): string[] {
 }
 
 /**
+ * Recursively redact known-sensitive keys in JSON-shaped values.
+ * Handles arbitrary nesting so a stringified provider error body that
+ * embeds `{ headers: { authorization: '...' } }` is scrubbed before any
+ * stringification.
+ */
+const SENSITIVE_KEY_PATTERN = /(authorization|api[_-]?key|access[_-]?token|secret|bearer|password|x-api-key)/i;
+
+function redactValue(v: unknown, depth = 0): unknown {
+  if (depth > 6) return '[…]';
+  if (Array.isArray(v)) return v.map(item => redactValue(item, depth + 1));
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      out[k] = SENSITIVE_KEY_PATTERN.test(k) ? '[REDACTED]' : redactValue(val, depth + 1);
+    }
+    return out;
+  }
+  if (typeof v === 'string') return redactString(v);
+  return v;
+}
+
+function redactString(s: string): string {
+  let out = s;
+  // Long opaque tokens — covers common provider key prefixes plus a generic
+  // long-base64/hex catch-all.
+  out = out.replace(
+    /\b(sk-[a-zA-Z0-9_-]{20,}|gsk_[a-zA-Z0-9_-]{20,}|r8_[a-zA-Z0-9_-]{20,}|hf_[a-zA-Z0-9_-]{20,}|xi-[a-zA-Z0-9_-]{20,}|[A-Za-z0-9+/]{40,}|[a-f0-9]{32,})\b/g,
+    '[REDACTED]'
+  );
+  // Bearer X.Y.Z JWT-style
+  out = out.replace(/Bearer\s+[A-Za-z0-9\-._~+/=]+/gi, 'Bearer [REDACTED]');
+  // URLs (often include query-string tokens)
+  out = out.replace(/https?:\/\/\S+/g, '[URL]');
+  return out;
+}
+
+/**
  * Sanitize an arbitrary error into a safe shape for the client.
- * Strips stack traces, request bodies, headers (which often contain keys),
- * and any string that looks like an API key.
+ * Stack traces are dropped, body snippets are recursively redacted, and the
+ * final string is length-capped so a giant provider response can't pollute
+ * either the client or our logs.
  */
 export function sanitizeError(e: unknown, defaultMessage = 'Internal error'): {
   error: string;
@@ -99,14 +137,18 @@ export function sanitizeError(e: unknown, defaultMessage = 'Internal error'): {
     message = e;
   }
 
-  // Redact anything that looks like a key (long opaque tokens)
-  const KEY_PATTERN = /\b(sk-[a-zA-Z0-9_-]{20,}|gsk_[a-zA-Z0-9_-]{20,}|r8_[a-zA-Z0-9_-]{20,}|hf_[a-zA-Z0-9_-]{20,}|[a-f0-9]{32,})\b/g;
-  message = message.replace(KEY_PATTERN, '[REDACTED]');
+  // If the message embeds JSON, parse + recursively redact before re-stringifying.
+  const trimmed = message.trim();
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      message = JSON.stringify(redactValue(JSON.parse(trimmed)));
+    } catch {
+      message = redactString(message);
+    }
+  } else {
+    message = redactString(message);
+  }
 
-  // Redact URLs (often include query-string tokens)
-  message = message.replace(/https?:\/\/\S+/g, '[URL]');
-
-  // Cap length so a giant provider response doesn't pollute the client
   if (message.length > 500) message = message.slice(0, 497) + '...';
 
   return { error: message, code };

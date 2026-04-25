@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config';
 import { deleteOldJobs } from './jobs';
+import { deleteOldUploads } from './uploads';
 
 /**
  * On boot, delete jobs older than `JOBS_RETENTION_DAYS` and prune any orphan
@@ -16,10 +17,12 @@ export function runCleanup(): void {
   if (retentionMs <= 0) return;
 
   let removedJobs = 0;
+  let removedUploads = 0;
   try {
     removedJobs = deleteOldJobs(retentionMs);
+    removedUploads = deleteOldUploads(retentionMs);
   } catch (e) {
-    console.error('[cleanup] failed to delete old jobs:', (e as Error).message);
+    console.error('[cleanup] failed to delete old records:', (e as Error).message);
   }
 
   const cutoff = Date.now() - retentionMs;
@@ -48,7 +51,10 @@ export function runCleanup(): void {
     }
   }
 
-  if (removedJobs > 0 || removedFiles > 0) {
-    console.log(`[cleanup] removed ${removedJobs} jobs and ${removedFiles} files older than ${config.jobsRetentionDays}d`);
+  if (removedJobs > 0 || removedUploads > 0 || removedFiles > 0) {
+    console.log(
+      `[cleanup] removed ${removedJobs} jobs, ${removedUploads} uploads, ${removedFiles} files ` +
+      `older than ${config.jobsRetentionDays}d`
+    );
   }
 }

@@ -29,7 +29,7 @@ interface JobStatusResponse {
 
 interface Props {
   jobs: JobMeta[];
-  onAdopt: (result: TranscriptionResult) => void;
+  onAdopt: (jobId: string, result: TranscriptionResult) => void;
   onCancel: () => void;
 }
 
@@ -130,7 +130,7 @@ export default function CompareView({ jobs, onAdopt, onCancel }: Props) {
                 </div>
                 {s.result && (
                   <button
-                    onClick={() => onAdopt(s.result!)}
+                    onClick={() => onAdopt(s.jobId, s.result!)}
                     className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-500"
                     title="Use this transcript"
                   >

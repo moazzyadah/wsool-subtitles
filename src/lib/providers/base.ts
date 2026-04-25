@@ -1,25 +1,38 @@
 import 'server-only';
 import type { ProviderError, TranscribeOutcome } from '@/types/provider';
 
+/**
+ * Default classification:
+ *   - 429 / explicit 5xx → retryable (let fallback chain pick the next provider)
+ *   - undefined → NOT retryable; callers that know the failure is transient
+ *     (e.g. fetch network error) should pass `retryable: true` explicitly
+ *   - everything else (4xx auth/input errors, terminal provider job states) →
+ *     non-retryable; fail loudly so misconfiguration surfaces
+ */
 export function classifyError(status: number | undefined, msg: string): ProviderError {
-  // 429 / 5xx / network — retryable, may fall back to next provider
-  // 4xx (except 429) — config/input error, fail loudly, do not fall back
-  const retryable = status === 429 || status === undefined || (status >= 500 && status < 600);
+  const retryable = status === 429 || (typeof status === 'number' && status >= 500 && status < 600);
   return { message: msg, status, retryable };
 }
 
-export function failed(status: number | undefined, msg: string): TranscribeOutcome {
-  return { kind: 'failed', error: classifyError(status, msg) };
+/** Build a failed outcome. `retryable` overrides the default classification. */
+export function failed(status: number | undefined, msg: string, retryable?: boolean): TranscribeOutcome {
+  const err = classifyError(status, msg);
+  if (typeof retryable === 'boolean') err.retryable = retryable;
+  return { kind: 'failed', error: err };
 }
 
-/** Throws ProviderError-shaped error if the response is not OK. */
+/**
+ * Throws a status-tagged error if the response is not OK.
+ * Body snippets are NEVER attached to the thrown message — they routinely
+ * contain echoed request data, internal IDs, or auth metadata. The full body
+ * is logged server-side for debugging via console.warn instead.
+ */
 export async function ensureOk(res: Response, providerName: string): Promise<void> {
   if (res.ok) return;
   let body = '';
   try { body = await res.text(); } catch { /* ignore */ }
-  // Cap to avoid logging huge HTML error pages
-  const snippet = body.length > 300 ? body.slice(0, 300) + '...' : body;
-  const err = new Error(`${providerName} HTTP ${res.status}: ${snippet}`);
+  if (body) console.warn(`[${providerName}] HTTP ${res.status} body:`, body.slice(0, 1000));
+  const err = new Error(`${providerName} HTTP ${res.status}`);
   (err as Error & { status?: number }).status = res.status;
   throw err;
 }

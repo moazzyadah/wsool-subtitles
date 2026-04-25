@@ -73,19 +73,24 @@ export interface ProviderInfo {
 }
 
 export interface TranscribeInput {
+  /** Audio bytes — may be loaded lazily from `audioPath` for memory-conscious providers */
   audio: Buffer;
+  /** Absolute path to the canonical audio file on disk (FLAC after upload pipeline) */
+  audioPath: string;
   audioFormat: 'flac' | 'mp3' | 'wav';
   model: string;
   language?: string;
   prompt?: string;
   task?: 'transcribe' | 'translate';
   wordTimestamps: boolean;
+  /** Optional AbortSignal — providers must wire it into fetch/child_process for timeouts */
+  signal?: AbortSignal;
 }
 
 export interface STTProvider {
   readonly id: string;
   readonly capabilities: ProviderCapabilities;
   start(input: TranscribeInput): Promise<TranscribeOutcome>;
-  /** Only async providers implement this. */
-  poll?(token: string): Promise<TranscribeOutcome>;
+  /** Only async providers implement this. Signal is wired into fetch for timeouts. */
+  poll?(token: string, signal?: AbortSignal): Promise<TranscribeOutcome>;
 }

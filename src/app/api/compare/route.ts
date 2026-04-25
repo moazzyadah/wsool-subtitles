@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'node:fs';
 import { z } from 'zod';
 import { newJobId, validateJobId, UploadError } from '@/lib/upload';
 import { createJob } from '@/lib/jobs';
+import { getUpload } from '@/lib/uploads';
 import { isProviderEnabled, PROVIDERS } from '@/lib/providers/registry';
 import { sanitizeError } from '@/lib/config';
 
@@ -17,8 +17,6 @@ const SelectionSchema = z.object({
 
 const Schema = z.object({
   uploadId: z.string(),
-  audioPath: z.string(),
-  audioHash: z.string().regex(/^[a-f0-9]{64}$/),
   selections: z.array(SelectionSchema).min(2).max(5),
 });
 
@@ -27,8 +25,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const body = Schema.parse(await req.json());
     validateJobId(body.uploadId);
 
-    if (!fs.existsSync(body.audioPath)) {
-      return NextResponse.json({ error: 'Audio file not found' }, { status: 404 });
+    if (!getUpload(body.uploadId)) {
+      return NextResponse.json({ error: 'Unknown uploadId' }, { status: 404 });
     }
 
     const jobs: Array<{ jobId: string; providerId: string; model: string; language: string }> = [];
@@ -51,13 +49,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const childId = newJobId();
       createJob({
         id: childId,
+        uploadId: body.uploadId,
         kind: 'compare',
         requestedProvider: sel.providerId,
         model: sel.model,
         language: sel.language,
         task: sel.task,
-        audioPath: body.audioPath,
-        audioHash: body.audioHash,
       });
       jobs.push({
         jobId: childId,

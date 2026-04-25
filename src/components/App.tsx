@@ -14,10 +14,7 @@ import type { TranscriptionResult, Segment, ProviderInfo as BaseProviderInfo } f
 type ProviderInfo = BaseProviderInfo & { enabled: boolean };
 
 interface UploadResult {
-  jobId: string;
-  sourcePath: string;
-  audioPath: string;
-  audioHash: string;
+  uploadId: string;
   durationSec: number;
   sourceMime: string;
 }
@@ -102,9 +99,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          uploadId: upload.jobId,
-          audioPath: upload.audioPath,
-          audioHash: upload.audioHash,
+          uploadId: upload.uploadId,
           providerId,
           model,
           language,
@@ -128,9 +123,7 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          uploadId: upload.jobId,
-          audioPath: upload.audioPath,
-          audioHash: upload.audioHash,
+          uploadId: upload.uploadId,
           selections,
         }),
       });
@@ -163,17 +156,34 @@ export default function App() {
     });
   }
 
-  function adoptCompareResult(result: TranscriptionResult): void {
+  function adoptCompareResult(jobId: string, result: TranscriptionResult): void {
     if (state.kind !== 'comparing') return;
+    // The compare-child jobId carries the persisted result that ExportPanel will
+    // read for SRT/VTT/burn — using the upload id here would 404.
     setState({
       kind: 'done',
       upload: state.upload,
       result,
       segments: result.segments,
-      jobId: state.upload.jobId,
+      jobId,
       actualProvider: result.actualProvider,
       fellBack: false,
     });
+  }
+
+  async function handleEditChange(segments: Segment[]): Promise<void> {
+    if (state.kind !== 'done') return;
+    setState({ ...state, segments });
+    // Persist edits server-side so SRT/VTT/burn use the latest text.
+    try {
+      await fetch(`/api/jobs/${encodeURIComponent(state.jobId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          segments: segments.map(s => ({ start: s.start, end: s.end, text: s.text })),
+        }),
+      });
+    } catch { /* swallow — local state already updated, user will see disk version on next download if persist failed */ }
   }
 
   function reset(): void {
@@ -283,9 +293,9 @@ export default function App() {
           <SubtitleEditor
             segments={state.segments}
             words={state.result.words}
-            onChange={segments => setState({ ...state, segments })}
+            onChange={segments => void handleEditChange(segments)}
           />
-          <ExportPanel jobId={state.jobId} sourcePath={state.upload.sourcePath} />
+          <ExportPanel jobId={state.jobId} uploadId={state.upload.uploadId} />
           <button onClick={reset} className="text-sm text-zinc-400 underline hover:text-zinc-200">
             Start over
           </button>

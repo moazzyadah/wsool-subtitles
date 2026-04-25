@@ -87,8 +87,25 @@ export interface BurnStyle {
 
 const COLOR_PATTERN = /^&H[0-9A-Fa-f]{6,8}$/;
 
+/**
+ * Escape a value for use inside the FFmpeg filtergraph `subtitles=` argument.
+ *
+ * Two layers of escaping happen because FFmpeg parses the filter string twice:
+ *   1. Filter-graph level: `\` escapes special chars `: , [ ] ; \ '`.
+ *   2. The libass `subtitles` filter additionally treats `:` as the option
+ *      separator, so a Windows path like `C:\videos\in.srt` would otherwise
+ *      be parsed as filter options. We escape `:` as `\:` here to keep the
+ *      whole path together as one option value.
+ */
 function escapeForLibass(s: string): string {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/:/g, '\\:')
+    .replace(/,/g, '\\,')
+    .replace(/\[/g, '\\[')
+    .replace(/]/g, '\\]')
+    .replace(/;/g, '\\;');
 }
 
 function buildForceStyle(style: BurnStyle): string {

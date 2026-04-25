@@ -5,10 +5,10 @@ import { Download, Film } from 'lucide-react';
 
 interface Props {
   jobId: string;
-  sourcePath: string;
+  uploadId: string;
 }
 
-export default function ExportPanel({ jobId, sourcePath }: Props) {
+export default function ExportPanel({ jobId, uploadId }: Props) {
   const [burning, setBurning] = useState(false);
   const [burnedPath, setBurnedPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +22,7 @@ export default function ExportPanel({ jobId, sourcePath }: Props) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jobId,
-          sourcePath,
+          uploadId,
           style: { font: 'Cairo', fontSize: 28, primaryColor: '&HFFFFFF', outlineColor: '&H000000', outline: 2, position: 'bottom' },
         }),
       });

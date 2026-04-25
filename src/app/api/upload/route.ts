@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'node:fs';
 import path from 'node:path';
-import { newJobId, ensureJobDirs, streamToFile, sniffAndRename, UploadError } from '@/lib/upload';
+import {
+  newJobId,
+  ensureJobDirs,
+  streamToFile,
+  sniffAndRename,
+  hashPathStreaming,
+  UploadError,
+} from '@/lib/upload';
 import { extractAudioToFlac, getDurationSec } from '@/lib/ffmpeg';
-import { hashFile } from '@/lib/cache';
+import { createUpload } from '@/lib/uploads';
 import { config, sanitizeError } from '@/lib/config';
 
 export const runtime = 'nodejs';
@@ -15,18 +22,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Empty request body' }, { status: 400 });
     }
 
-    const jobId = newJobId();
-    const { uploadDir } = ensureJobDirs(jobId);
+    const uploadId = newJobId();
+    const { uploadDir } = ensureJobDirs(uploadId);
     const rawPath = path.join(uploadDir, 'source.bin');
 
     await streamToFile(req.body, rawPath, config.maxUploadBytes);
     const sniffed = await sniffAndRename(rawPath);
 
-    // Confirm ffprobe can read it; reject if not (pure binary garbage will fail here)
     let durationSec: number;
     try {
       durationSec = await getDurationSec(sniffed.finalPath);
-    } catch (e) {
+    } catch {
       try { fs.unlinkSync(sniffed.finalPath); } catch { /* ignore */ }
       return NextResponse.json({ error: 'Could not parse media file' }, { status: 415 });
     }
@@ -39,18 +45,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Extract canonical 16kHz mono FLAC for any provider
     const audioPath = path.join(uploadDir, 'audio.flac');
     await extractAudioToFlac(sniffed.finalPath, audioPath);
 
-    const audio = fs.readFileSync(audioPath);
-    const audioHash = hashFile(audio);
+    const audioHash = await hashPathStreaming(audioPath);
 
-    return NextResponse.json({
-      jobId,
-      sourcePath: sniffed.finalPath,
+    createUpload({
+      id: uploadId,
       audioPath,
       audioHash,
+      sourcePath: sniffed.finalPath,
+      sourceMime: sniffed.mime,
+      durationSec,
+    });
+
+    // Only safe, opaque identifiers leave the server.
+    return NextResponse.json({
+      uploadId,
       durationSec,
       sourceMime: sniffed.mime,
     });

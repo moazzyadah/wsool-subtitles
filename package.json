@@ -5,9 +5,11 @@
   "description": "Universal multi-provider video subtitle generator with 14 STT providers and Egyptian Arabic dialect support",
   "license": "MIT",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
+    "dev:lan": "next dev --hostname 0.0.0.0",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --hostname 127.0.0.1",
+    "start:lan": "next start --hostname 0.0.0.0",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "smoke:libass": "node scripts/smoke-libass.mjs",
