@@ -16,16 +16,16 @@ ffmpeg.setFfmpegPath(FFMPEG_BIN);
 /** Hard cap to prevent runaway transcoding. 2 hours of input. */
 const MAX_INPUT_SECONDS = 7200;
 
-/** Read ffmpeg -version and check for libass + freetype. Throws with helpful guidance. */
+/** Read ffmpeg -version and check for libass + freetype + fribidi + harfbuzz. */
 export async function verifyFfmpegCapabilities(): Promise<void> {
   const { stdout } = await execFileAsync(FFMPEG_BIN, ['-version']);
-  const required = ['enable-libass', 'enable-libfreetype'];
+  const required = ['enable-libass', 'enable-libfreetype', 'enable-libfribidi', 'enable-libharfbuzz'];
   const missing = required.filter(flag => !stdout.includes(flag));
   if (missing.length > 0) {
     throw new Error(
       `FFmpeg at ${FFMPEG_BIN} is missing required features: ${missing.join(', ')}. ` +
-      `Arabic subtitle rendering will not work. ` +
-      `Install a full FFmpeg (brew install ffmpeg / choco install ffmpeg / apt-get install ffmpeg) ` +
+      `Arabic subtitle shaping will not work without libharfbuzz (letters won't join). ` +
+      `Install a harfbuzz-enabled build: download from https://github.com/BtbN/FFmpeg-Builds/releases/latest ` +
       `and set FFMPEG_PATH in .env to its absolute path.`
     );
   }
@@ -73,7 +73,7 @@ export async function getDurationSec(inputPath: string): Promise<number> {
 }
 
 /** Whitelist of fonts available in public/fonts (kept in sync with download script). */
-const ALLOWED_FONTS = ['Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Arial'] as const;
+const ALLOWED_FONTS = ['Amiri', 'IBM Plex Sans Arabic', 'Cairo', 'Tajawal', 'Arial'] as const;
 type AllowedFont = (typeof ALLOWED_FONTS)[number];
 
 export interface BurnStyle {
@@ -111,10 +111,10 @@ function escapeForLibass(s: string): string {
 function buildForceStyle(style: BurnStyle): string {
   const parts: string[] = [];
 
-  if (style.font) {
-    if (!ALLOWED_FONTS.includes(style.font)) throw new Error(`Font not allowed: ${style.font}`);
-    parts.push(`FontName=${style.font}`);
-  }
+  // Default to Amiri — best Arabic shaping with libass+harfbuzz on the bundled set.
+  const font: AllowedFont = style.font ?? 'Amiri';
+  if (!ALLOWED_FONTS.includes(font)) throw new Error(`Font not allowed: ${font}`);
+  parts.push(`FontName=${font}`);
   if (style.fontSize !== undefined) {
     if (!Number.isInteger(style.fontSize) || style.fontSize < 8 || style.fontSize > 96) {
       throw new Error('fontSize must be integer 8..96');
