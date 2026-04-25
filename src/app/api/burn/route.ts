@@ -8,12 +8,13 @@ import { getUpload } from '@/lib/uploads';
 import { burnSubtitles, type BurnStyle } from '@/lib/ffmpeg';
 import { groupWordsIntoSegments, segmentsToSrt } from '@/lib/srt';
 import { config, sanitizeError } from '@/lib/config';
+import { getPreset } from '@/lib/subtitle-presets';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 const StyleSchema = z.object({
-  font: z.enum(['Cairo', 'Tajawal', 'IBM Plex Sans Arabic', 'Arial']).optional(),
+  font: z.enum(['Amiri', 'IBM Plex Sans Arabic', 'Cairo', 'Tajawal', 'Arial']).optional(),
   fontSize: z.number().int().min(8).max(96).optional(),
   primaryColor: z.string().regex(/^&H[0-9A-Fa-f]{6,8}$/).optional(),
   outlineColor: z.string().regex(/^&H[0-9A-Fa-f]{6,8}$/).optional(),
@@ -24,6 +25,7 @@ const StyleSchema = z.object({
 const Schema = z.object({
   jobId: z.string(),
   uploadId: z.string(),
+  presetId: z.string().optional(),
   style: StyleSchema,
 });
 
@@ -66,8 +68,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const srtPath = path.join(outputDir, 'subtitle.srt');
     fs.writeFileSync(srtPath, '\uFEFF' + segmentsToSrt(segments), 'utf8');
 
+    // Resolve effective style: explicit `style` overrides preset; preset overrides defaults.
+    let effectiveStyle: BurnStyle = {};
+    if (body.presetId) {
+      const preset = getPreset(body.presetId);
+      if (!preset) {
+        return NextResponse.json({ error: `Unknown preset: ${body.presetId}` }, { status: 400 });
+      }
+      effectiveStyle = {
+        font: preset.burn.font,
+        fontSize: preset.burn.fontSize,
+        primaryColor: preset.burn.primaryColor,
+        outlineColor: preset.burn.outlineColor,
+        outline: preset.burn.outline,
+        position: preset.burn.position,
+      };
+    }
+    if (body.style) {
+      effectiveStyle = { ...effectiveStyle, ...body.style };
+    }
+
     const outPath = path.join(outputDir, 'burned.mp4');
-    await burnSubtitles(src, srtPath, outPath, (body.style ?? {}) as BurnStyle);
+    await burnSubtitles(src, srtPath, outPath, effectiveStyle);
 
     return NextResponse.json({ outputPath: outPath, srtPath });
   } catch (e) {
