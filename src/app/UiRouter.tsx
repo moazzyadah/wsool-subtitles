@@ -6,6 +6,6 @@ import NewApp from '@/components/v2/NewApp';
 
 export default function UiRouter() {
   const params = useSearchParams();
-  if (params.get('ui') === 'v2') return <NewApp />;
-  return <App />;
+  if (params.get('ui') === 'v1') return <App />;
+  return <NewApp />;
 }
