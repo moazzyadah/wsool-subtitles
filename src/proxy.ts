@@ -1,41 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 /**
- * Defense-in-depth loopback guard.
+ * Loopback enforcement is done ENTIRELY by the bind address.
  *
- * The PRIMARY enforcement is the bind address — `npm run dev` / `npm start` bind
- * to 127.0.0.1 unless ALLOW_LAN=true. That is the only check that cannot be
- * bypassed by a remote client.
+ * `npm run dev` / `npm start` bind to 127.0.0.1, so a remote client cannot
+ * reach the server in the first place. `npm run dev:lan` / `start:lan` opt
+ * the user into 0.0.0.0 binding for explicit LAN exposure.
  *
- * This middleware is a secondary check that uses the actual remote address
- * (NextRequest.ip when available, plus the connection's reported address).
- * The `Host` header is NEVER used for the trust decision — it is client-supplied
- * and trivially spoofable.
+ * We previously inspected `x-forwarded-for` / `x-real-ip` here as a secondary
+ * check. That check is removed: those headers are client-controlled and
+ * trivially spoofable, so a remote attacker can forge `x-forwarded-for: 127.0.0.1`
+ * and bypass the guard. Inspecting them gives false confidence — the bind
+ * address is the only reliable control.
  */
-export function proxy(request: NextRequest) {
-  if (process.env.ALLOW_LAN === 'true') return NextResponse.next();
-
-  // Next 15+ removed request.ip; rely on x-forwarded-for / x-real-ip set by the
-  // dev server's HTTP layer. When neither header is present we fall through and
-  // trust the bind-address enforcement from package.json scripts.
-  const fwd = request.headers.get('x-forwarded-for');
-  const ip = (fwd ? fwd.split(',')[0]?.trim() : '') || request.headers.get('x-real-ip') || '';
-  // Empty `ip` happens in standalone Node runtime without a proxy — fall through
-  // and rely on the bind-address enforcement done in package.json scripts.
-  if (!ip) return NextResponse.next();
-
-  if (isLoopback(ip)) return NextResponse.next();
-
-  return new NextResponse('Forbidden — non-loopback access blocked. Set ALLOW_LAN=true to override.', {
-    status: 403,
-  });
-}
-
-function isLoopback(addr: string): boolean {
-  const a = addr.replace(/^::ffff:/, ''); // unwrap IPv4-mapped IPv6
-  if (a === '127.0.0.1' || a === '::1') return true;
-  if (a.startsWith('127.')) return true;
-  return false;
+export function proxy() {
+  return NextResponse.next();
 }
 
 export const config = {

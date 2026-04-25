@@ -1,10 +1,5 @@
 @import "tailwindcss";
 
-@theme {
-  --font-arabic: Cairo, Tajawal, "IBM Plex Sans Arabic", sans-serif;
-  --font-sans: system-ui, sans-serif;
-}
-
 :root {
   color-scheme: dark;
 }
