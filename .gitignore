@@ -49,3 +49,4 @@ coverage/
 # Optional smoke-test outputs
 smoke-test-output.mp4
 .smoke-*/
+.tmp/

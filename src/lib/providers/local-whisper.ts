@@ -1,7 +1,6 @@
 import 'server-only';
 import fs from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { STTProvider, TranscribeInput, TranscribeOutcome, TranscriptionResult, Word, Segment } from '@/types/provider';
@@ -107,7 +106,12 @@ async function transcodeToPcmWav(srcPath: string, destPath: string): Promise<voi
 async function runWhisperCpp(input: TranscribeInput, modelFile: string): Promise<TranscriptionResult> {
   const bin = await findWhisperBinary();
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wsool-'));
+  // Use a project-local tmp dir instead of os.tmpdir() so it's reachable from
+  // a native Windows whisper-cli.exe when invoked from WSL via a wrapper script.
+  // os.tmpdir() returns /tmp on Linux/WSL which Windows binaries cannot access.
+  const tmpRoot = path.join(config.paths.root, '.tmp');
+  fs.mkdirSync(tmpRoot, { recursive: true });
+  const tmpDir = fs.mkdtempSync(path.join(tmpRoot, 'wsool-'));
   const wavPath = path.join(tmpDir, 'in.wav');
   await transcodeToPcmWav(input.audioPath, wavPath);
 
