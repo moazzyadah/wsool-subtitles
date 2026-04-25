@@ -1,5 +1,10 @@
-import App from '@/components/App';
+import { Suspense } from 'react';
+import UiRouter from './UiRouter';
 
 export default function Page() {
-  return <App />;
+  return (
+    <Suspense>
+      <UiRouter />
+    </Suspense>
+  );
 }
