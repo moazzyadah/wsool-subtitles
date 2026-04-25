@@ -8,6 +8,7 @@ import Logo from "@/components/ui/Logo";
 import Tooltip from "@/components/ui/Tooltip";
 import ImportView from "./ImportView";
 import ProcessingView from "./ProcessingView";
+import EditorView from "./EditorView";
 
 export type AppStep = "import" | "processing" | "editor";
 
@@ -274,9 +275,8 @@ export default function NewApp() {
             </motion.div>
           )}
           {state.step === "editor" && (
-            <motion.div key="editor" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex items-center justify-center">
-              {/* EditorView — Phase 5 */}
-              <div className="text-muted-foreground text-sm">Editor coming in Phase 5 — jobId: {state.jobId}</div>
+            <motion.div key="editor" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="flex-1 flex flex-col min-h-0">
+              <EditorView jobId={state.jobId} uploadId={state.uploadId} onNewProject={reset} />
             </motion.div>
           )}
         </AnimatePresence>

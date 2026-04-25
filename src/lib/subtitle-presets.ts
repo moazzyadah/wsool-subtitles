@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 /**
  * Single source of truth for subtitle styling — drives BOTH the live web
  * overlay (CSS) and the libass `force_style` used when burning into MP4.
@@ -187,3 +189,39 @@ export function getPreset(id: string): SubtitlePreset | null {
 }
 
 export const DEFAULT_PRESET_ID: PresetId = 'classic';
+
+/**
+ * Build the inline CSS for the editor's live web overlay text container.
+ * Position is handled separately (see presetToPositionClass) because Tailwind
+ * positioning utilities outperform inline `top/bottom`.
+ */
+export function presetToOverlayStyle(preset: SubtitlePreset): CSSProperties {
+  const w = preset.web;
+  const style: CSSProperties = {
+    fontFamily: w.fontFamily,
+    fontSize: `${w.fontSize}px`,
+    fontWeight: w.fontWeight,
+    color: w.color,
+    lineHeight: 1.25,
+  };
+  if (w.background) style.background = w.background;
+  if (w.padding) style.padding = w.padding;
+  if (w.textShadow) style.textShadow = w.textShadow;
+  if (w.textStroke) style.WebkitTextStroke = w.textStroke;
+  if (w.italic) style.fontStyle = 'italic';
+  if (w.background) style.borderRadius = '4px';
+  return style;
+}
+
+/** Tailwind classes that pin the overlay container to its preset position. */
+export function presetToPositionClass(preset: SubtitlePreset): string {
+  switch (preset.web.position) {
+    case 'top':
+      return 'top-6 left-0 right-0 flex justify-center';
+    case 'middle':
+      return 'inset-0 flex items-center justify-center';
+    case 'bottom':
+    default:
+      return 'bottom-10 left-0 right-0 flex justify-center';
+  }
+}
