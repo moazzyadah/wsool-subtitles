@@ -79,11 +79,15 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<NextResponse> {
 }
 
 const PatchSchema = z.object({
-  segments: z.array(z.object({
-    start: z.number().min(0),
-    end: z.number().min(0),
-    text: z.string().max(2000),
-  })).max(5000),
+  segments: z.array(
+    z.object({
+      start: z.number().min(0),
+      end: z.number().min(0),
+      text: z.string().max(2000),
+    }).refine((s) => s.start <= s.end, {
+      message: 'segment start must be <= end',
+    })
+  ).min(1).max(5000),
 });
 
 /** Persist user-edited segments. Export/burn read these on subsequent requests. */

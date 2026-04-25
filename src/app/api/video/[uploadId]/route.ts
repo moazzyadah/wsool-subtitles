@@ -63,9 +63,20 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
     }
     const size = stat.size;
     const ext = path.extname(src).toLowerCase();
-    const mime =
-      rec.sourceMime ||
-      (ext === '.mp4' ? 'video/mp4' : ext === '.webm' ? 'video/webm' : ext === '.mov' ? 'video/quicktime' : 'video/mp4');
+    const EXT_MIME: Record<string, string> = {
+      '.mp4': 'video/mp4',
+      '.m4v': 'video/x-m4v',
+      '.webm': 'video/webm',
+      '.mov': 'video/quicktime',
+      '.mkv': 'video/x-matroska',
+      '.avi': 'video/x-msvideo',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.flac': 'audio/flac',
+      '.m4a': 'audio/mp4',
+      '.ogg': 'audio/ogg',
+    };
+    const mime = rec.sourceMime || EXT_MIME[ext] || 'application/octet-stream';
 
     const range = parseRange(req.headers.get('range'), size);
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { validateJobId, safeJoin, UploadError } from '@/lib/upload';
@@ -11,7 +12,7 @@ import { config, sanitizeError } from '@/lib/config';
 import { getPreset } from '@/lib/subtitle-presets';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300;
+export const maxDuration = 1200;
 
 const StyleSchema = z.object({
   font: z.enum(['Amiri', 'IBM Plex Sans Arabic', 'Cairo', 'Tajawal', 'Arial']).optional(),
@@ -46,13 +47,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Upload no longer available' }, { status: 404 });
     }
     // Defense in depth: server-resolved sourcePath must lie under uploads root.
-    const root = path.resolve(config.paths.uploads);
-    const src = path.resolve(upload.sourcePath);
-    if (!src.startsWith(root + path.sep)) {
-      return NextResponse.json({ error: 'Source path escapes uploads root' }, { status: 400 });
+    // Reject symlinks (lstat) and resolve realpath before containment check so
+    // a stored sourcePath whose link target escapes the uploads root cannot be
+    // burned. Mirrors /api/video/[uploadId] hardening.
+    const root = await fsp.realpath(path.resolve(config.paths.uploads));
+    const lstat = await fsp.lstat(upload.sourcePath);
+    if (lstat.isSymbolicLink()) {
+      return NextResponse.json({ error: 'Source path is a symlink' }, { status: 403 });
     }
-    if (!fs.existsSync(src)) {
-      return NextResponse.json({ error: 'Source video missing on disk' }, { status: 404 });
+    const src = await fsp.realpath(path.resolve(upload.sourcePath));
+    if (!src.startsWith(root + path.sep)) {
+      return NextResponse.json({ error: 'Source path escapes uploads root' }, { status: 403 });
+    }
+    const srcStat = await fsp.stat(src);
+    if (!srcStat.isFile()) {
+      return NextResponse.json({ error: 'Source path is not a regular file' }, { status: 403 });
     }
 
     const outputDir = safeJoin(config.paths.outputs, jobId);
