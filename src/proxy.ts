@@ -12,10 +12,14 @@ import { NextRequest, NextResponse } from 'next/server';
  * The `Host` header is NEVER used for the trust decision — it is client-supplied
  * and trivially spoofable.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   if (process.env.ALLOW_LAN === 'true') return NextResponse.next();
 
-  const ip = request.ip ?? request.headers.get('x-real-ip') ?? '';
+  // Next 15+ removed request.ip; rely on x-forwarded-for / x-real-ip set by the
+  // dev server's HTTP layer. When neither header is present we fall through and
+  // trust the bind-address enforcement from package.json scripts.
+  const fwd = request.headers.get('x-forwarded-for');
+  const ip = (fwd ? fwd.split(',')[0]?.trim() : '') || request.headers.get('x-real-ip') || '';
   // Empty `ip` happens in standalone Node runtime without a proxy — fall through
   // and rely on the bind-address enforcement done in package.json scripts.
   if (!ip) return NextResponse.next();

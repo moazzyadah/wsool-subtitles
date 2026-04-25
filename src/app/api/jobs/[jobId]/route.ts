@@ -8,7 +8,7 @@ import type { TranscriptionResult } from '@/types/provider';
 
 export const runtime = 'nodejs';
 
-interface Ctx { params: { jobId: string } }
+interface Ctx { params: Promise<{ jobId: string }> }
 
 /** Strip raw debug payload before sending the result to the client. */
 function safeResult(r: TranscriptionResult | undefined): Omit<TranscriptionResult, 'raw'> | undefined {
@@ -20,7 +20,8 @@ function safeResult(r: TranscriptionResult | undefined): Omit<TranscriptionResul
 
 export async function GET(req: NextRequest, ctx: Ctx): Promise<NextResponse> {
   try {
-    const id = validateJobId(ctx.params.jobId);
+    const { jobId } = await ctx.params;
+    const id = validateJobId(jobId);
     const job = getJob(id);
     if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
 
@@ -88,7 +89,8 @@ const PatchSchema = z.object({
 /** Persist user-edited segments. Export/burn read these on subsequent requests. */
 export async function PATCH(req: NextRequest, ctx: Ctx): Promise<NextResponse> {
   try {
-    const id = validateJobId(ctx.params.jobId);
+    const { jobId } = await ctx.params;
+    const id = validateJobId(jobId);
     const body = PatchSchema.parse(await req.json());
     const ok = setEditedSegments(id, body.segments);
     if (!ok) return NextResponse.json({ error: 'Job not editable' }, { status: 409 });
