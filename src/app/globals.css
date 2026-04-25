@@ -1,14 +1,123 @@
 @import "tailwindcss";
 
+@theme {
+  --color-background: hsl(0 0% 5%);
+  --color-foreground: hsl(0 0% 98%);
+  --color-card: hsl(0 0% 8%);
+  --color-card-foreground: hsl(0 0% 98%);
+  --color-popover: hsl(0 0% 8%);
+  --color-popover-foreground: hsl(0 0% 98%);
+  --color-primary: hsl(0 0% 98%);
+  --color-primary-foreground: hsl(0 0% 5%);
+  --color-secondary: hsl(0 0% 12%);
+  --color-secondary-foreground: hsl(0 0% 98%);
+  --color-muted: hsl(0 0% 12%);
+  --color-muted-foreground: hsl(0 0% 65%);
+  --color-accent: hsl(0 0% 12%);
+  --color-accent-foreground: hsl(0 0% 98%);
+  --color-destructive: hsl(0 62.8% 30.6%);
+  --color-destructive-foreground: hsl(0 0% 98%);
+  --color-border: hsl(0 0% 15%);
+  --color-input: hsl(0 0% 15%);
+  --color-ring: hsl(0 0% 83.1%);
+
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-cairo), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --animate-waveform: waveform 1.2s ease-in-out infinite;
+  --animate-float: float 8s ease-in-out infinite;
+  --animate-glow-pulse: glow-pulse 3s ease-in-out infinite;
+  --animate-shimmer: shimmer 2.5s linear infinite;
+  --animate-blink: cursor-blink 1s steps(2, jump-none) infinite;
+  --animate-wave-bar: waveBar 0.9s ease-in-out infinite;
+  --animate-gradient-shift: gradient-shift 6s ease-in-out infinite;
+}
+
 :root {
   color-scheme: dark;
 }
 
 body {
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-/* RTL-friendly subtitle editor lines */
 .subtitle-line {
   unicode-bidi: plaintext;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-muted);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-foreground);
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.text-balance { text-wrap: balance; }
+
+.hero-gradient-text {
+  background: linear-gradient(
+    90deg,
+    #FF3B30, #FF9500, #C8D200, #34C759, #00BCD4, #34C759, #C8D200, #FF9500, #FF3B30
+  );
+  background-size: 300% 100%;
+  animation: var(--animate-gradient-shift);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes waveform {
+  0%   { height: 8px;  opacity: 0.4; }
+  50%  { height: 40px; opacity: 1; }
+  100% { height: 12px; opacity: 0.5; }
+}
+
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%      { transform: translate(10px, -15px) scale(1.05); }
+  66%      { transform: translate(-8px, 10px) scale(0.97); }
+}
+
+@keyframes glow-pulse {
+  0%, 100% { filter: drop-shadow(0 0 8px rgb(255 255 255 / 0.15)); }
+  50%      { filter: drop-shadow(0 0 20px rgb(255 255 255 / 0.30)); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+@keyframes waveBar {
+  0%, 100% { transform: scaleY(1); }
+  50%      { transform: scaleY(0.28); }
+}
+
+@keyframes gradient-shift {
+  0%, 100% { background-position:   0% 50%; }
+  50%      { background-position: 100% 50%; }
 }
