@@ -77,10 +77,10 @@ async function findWhisperBinary(): Promise<string> {
 }
 
 interface WhisperJsonSegment {
-  start: number;
-  end: number;
+  offsets?: { from: number; to: number }; // milliseconds — present with -oj
+  timestamps?: { from: string; to: string }; // human-readable, ignored
   text: string;
-  tokens?: Array<{ text: string; t0: number; t1: number; p?: number }>;
+  tokens?: Array<{ text: string; offsets?: { from: number; to: number }; p?: number }>; // -ojf only
 }
 
 interface WhisperJsonOutput {
@@ -136,17 +136,21 @@ async function runWhisperCpp(input: TranscribeInput, modelFile: string): Promise
     const words: Word[] = [];
 
     for (const seg of json.transcription ?? []) {
+      const startMs = seg.offsets?.from ?? 0;
+      const endMs = seg.offsets?.to ?? startMs;
       segments.push({
         text: String(seg.text).trim(),
-        start: seg.start / 1000, // whisper.cpp gives ms when -oj
-        end: seg.end / 1000,
+        start: startMs / 1000,
+        end: endMs / 1000,
       });
       for (const tok of seg.tokens ?? []) {
         if (!tok.text || tok.text.startsWith('[_')) continue;
+        const tStartMs = tok.offsets?.from ?? startMs;
+        const tEndMs = tok.offsets?.to ?? tStartMs;
         words.push({
           text: tok.text,
-          start: tok.t0 / 1000,
-          end: tok.t1 / 1000,
+          start: tStartMs / 1000,
+          end: tEndMs / 1000,
           confidence: tok.p,
         });
       }
