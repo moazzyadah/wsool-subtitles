@@ -50,8 +50,9 @@ export default function ImportView({ onNext }: ImportViewProps) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || `Upload failed (${res.status})`);
     }
-    const data = await res.json();
-    return data.uploadId as string;
+    const data = await res.json() as { uploadId?: unknown };
+    if (typeof data.uploadId !== "string") throw new Error("Server returned no uploadId");
+    return data.uploadId;
   };
 
   const onDrop = useCallback(async (accepted: File[], rejected: unknown[]) => {
@@ -109,8 +110,9 @@ export default function ImportView({ onNext }: ImportViewProps) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Failed to ingest URL (${res.status})`);
       }
-      const data = await res.json();
-      onNext(data.uploadId as string);
+      const data = await res.json() as { uploadId?: unknown };
+      if (typeof data.uploadId !== "string") throw new Error("Server returned no uploadId");
+      onNext(data.uploadId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to ingest URL");
     } finally {

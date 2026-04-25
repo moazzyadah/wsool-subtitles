@@ -48,6 +48,7 @@ export default function ProcessingView({ uploadId, onDone, onReset }: Processing
   const [jobId, setJobId] = useState<string | null>(null);
   const hasStarted = useRef(false);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aborted = useRef(false);
 
   // Auto-start once uploadId arrives (no API key needed for local provider)
   useEffect(() => {
@@ -57,12 +58,17 @@ export default function ProcessingView({ uploadId, onDone, onReset }: Processing
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadId]);
 
-  // Cleanup poll on unmount
+  // Cleanup poll on unmount: cancel pending tick AND mark aborted so any
+  // in-flight fetch resolution skips setState/onDone on a dead component.
   useEffect(() => {
-    return () => { if (pollTimer.current) clearTimeout(pollTimer.current); };
+    return () => {
+      aborted.current = true;
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+    };
   }, []);
 
   const run = async (sel: ProviderSelection) => {
+    if (aborted.current) return;
     setError(null);
     setCurrentStage(0);
 
@@ -79,19 +85,24 @@ export default function ProcessingView({ uploadId, onDone, onReset }: Processing
           task: "transcribe",
         }),
       });
+      if (aborted.current) return;
 
       if (!enqueueRes.ok) {
         const data = await enqueueRes.json().catch(() => ({}));
         throw new Error(data.error || `Failed to start transcription (${enqueueRes.status})`);
       }
 
-      const { jobId: jid } = await enqueueRes.json() as { jobId: string };
+      const data = await enqueueRes.json() as { jobId?: unknown };
+      if (typeof data.jobId !== "string") throw new Error("Server returned no jobId");
+      const jid = data.jobId;
+      if (aborted.current) return;
       setJobId(jid);
       setCurrentStage(1);
 
       // Stage 1-2: Poll
       await poll(jid);
     } catch (e) {
+      if (aborted.current) return;
       setError(e instanceof Error ? e.message : "An unknown error occurred");
     }
   };
@@ -99,17 +110,21 @@ export default function ProcessingView({ uploadId, onDone, onReset }: Processing
   const poll = (jid: string): Promise<void> => {
     return new Promise((resolve, reject) => {
       const tick = async () => {
+        if (aborted.current) { resolve(); return; }
         try {
           const res = await fetch(`/api/jobs/${jid}`);
+          if (aborted.current) { resolve(); return; }
           if (!res.ok) {
             reject(new Error(`Job fetch failed (${res.status})`));
             return;
           }
           const job = await res.json() as { status: string; error?: string; result?: { durationSec: number } };
+          if (aborted.current) { resolve(); return; }
 
           if (job.status === "done") {
             setCurrentStage(3);
-            setTimeout(() => {
+            pollTimer.current = setTimeout(() => {
+              if (aborted.current) { resolve(); return; }
               onDone(jid, `Job ${jid.slice(0, 8)}`);
               resolve();
             }, 800);
@@ -121,6 +136,7 @@ export default function ProcessingView({ uploadId, onDone, onReset }: Processing
             pollTimer.current = setTimeout(tick, 1500);
           }
         } catch (e) {
+          if (aborted.current) { resolve(); return; }
           reject(e);
         }
       };

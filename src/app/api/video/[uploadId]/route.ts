@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { validateJobId, UploadError } from '@/lib/upload';
@@ -46,13 +47,20 @@ export async function GET(req: NextRequest, ctx: Ctx): Promise<Response> {
       return new Response('Not found', { status: 404 });
     }
 
-    const root = path.resolve(config.paths.uploads);
-    const src = path.resolve(rec.sourcePath);
+    const root = await fsp.realpath(path.resolve(config.paths.uploads));
+    const lstat = await fsp.lstat(rec.sourcePath);
+    if (lstat.isSymbolicLink()) {
+      return new Response('Forbidden', { status: 403 });
+    }
+    const src = await fsp.realpath(path.resolve(rec.sourcePath));
     if (!src.startsWith(root + path.sep)) {
       return new Response('Forbidden', { status: 403 });
     }
 
-    const stat = fs.statSync(src);
+    const stat = await fsp.stat(src);
+    if (!stat.isFile()) {
+      return new Response('Forbidden', { status: 403 });
+    }
     const size = stat.size;
     const ext = path.extname(src).toLowerCase();
     const mime =
